@@ -1,0 +1,13 @@
+package com.aierp.model.bo;
+
+import lombok.Data;
+
+@Data
+public class ShipStockUpCompleteBo {
+    private Long stockingId;//备货单ID
+    private String stockOutNum;
+//    private LocalDateTime completeTime;
+    private Long warehouseId;
+    private Long[] ids;
+    private String[] orderNums;
+}

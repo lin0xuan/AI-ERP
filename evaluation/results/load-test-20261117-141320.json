@@ -1,0 +1,78 @@
+{
+  "at": "2026-11-17T14:13:20",
+  "baseUrl": "http://127.0.0.1:8088",
+  "workers": 20,
+  "seconds": 15,
+  "endpoints": [
+    {
+      "name": "goods-list",
+      "requests": 754,
+      "success": 754,
+      "errors": 0,
+      "avgMs": 102.8,
+      "p50Ms": 76,
+      "p95Ms": 265,
+      "maxMs": 587
+    },
+    {
+      "name": "sku-search",
+      "requests": 754,
+      "success": 754,
+      "errors": 0,
+      "avgMs": 25.9,
+      "p50Ms": 17,
+      "p95Ms": 84,
+      "maxMs": 185
+    },
+    {
+      "name": "order-list",
+      "requests": 754,
+      "success": 754,
+      "errors": 0,
+      "avgMs": 77.8,
+      "p50Ms": 63,
+      "p95Ms": 184,
+      "maxMs": 619
+    },
+    {
+      "name": "shop-list",
+      "requests": 754,
+      "success": 754,
+      "errors": 0,
+      "avgMs": 22.6,
+      "p50Ms": 14,
+      "p95Ms": 68,
+      "maxMs": 317
+    },
+    {
+      "name": "member-list",
+      "requests": 754,
+      "success": 754,
+      "errors": 0,
+      "avgMs": 139.0,
+      "p50Ms": 117,
+      "p95Ms": 341,
+      "maxMs": 657
+    },
+    {
+      "name": "inventory-page",
+      "requests": 754,
+      "success": 754,
+      "errors": 0,
+      "avgMs": 23.8,
+      "p50Ms": 15,
+      "p95Ms": 73,
+      "maxMs": 261
+    },
+    {
+      "name": "sales-analysis-once",
+      "requests": 1,
+      "success": 1,
+      "errors": 0,
+      "avgMs": 46,
+      "p50Ms": 46,
+      "p95Ms": 46,
+      "maxMs": 46
+    }
+  ]
+}

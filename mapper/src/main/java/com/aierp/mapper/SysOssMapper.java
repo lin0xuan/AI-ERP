@@ -1,0 +1,19 @@
+package com.aierp.mapper;
+
+
+import com.aierp.model.SysOss;
+import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+
+/**
+* @author qilip
+* @description 针对表【sys_oss(文件表)】的数据库操作Mapper
+* @createDate 2024-09-07 17:06:28
+* @Entity com.aierp.module.sys.domain.SysOss
+*/
+public interface SysOssMapper extends BaseMapper<SysOss> {
+
+}
+
+
+
+

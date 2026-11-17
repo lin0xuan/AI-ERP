@@ -1,0 +1,17 @@
+# 复制为 config/application.yml 后再填写。该文件会被 Spring Boot 从项目根目录加载，并覆盖 application.yml 里的同名项。
+# 不要把复制后的 application.yml 提交到 Git。
+
+spring:
+  datasource:
+    password: your-mysql-password
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+token:
+  # 至少 32 个字符的随机串
+  secret: replace-with-a-long-random-secret
+
+# 可选。模型配置页里保存的密钥优先生效，这里只作为 Spring AI 自动配置的占位。
+# DEEPSEEK_API_KEY 也可以直接用环境变量注入。

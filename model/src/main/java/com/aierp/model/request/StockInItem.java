@@ -1,0 +1,11 @@
+package com.aierp.model.request;
+
+import lombok.Data;
+
+@Data
+public class StockInItem {
+    private Long id;
+    private Integer intoQuantity;
+    private Long positionId;
+    private String positionNum;
+}
