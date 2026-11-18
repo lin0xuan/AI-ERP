@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI ERP 记忆界面测试</title></head>
+<body><h1>AI ERP 记忆界面测试</h1><p>独立界面夹具：所有接口均使用模拟数据，不连接业务库或模型。点击右下角助手测试。</p><div id="app"></div>
+<script type="module">
+import { createApp } from 'vue'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import ChatWidget from '/src/components/ChatWidget/index.vue'
+import request from '/src/utils/request'
+let sessions=['fixture-session-1']
+let records=[{sessionId:sessions[0],role:'user',content:'请记住：预算不得超过12,345.67元。'}, {sessionId:sessions[0],role:'assistant',content:'已记录预算。<img src="x" onerror="window.fixtureXss=true">'}]
+let memories=[{id:'fixture-memory',fact_key:'user.purchase.budget',kind:'fact',content:'预算不得超过12,345.67元。',importance:9,version:2,status:'active',updated_at:1795046400000}]
+request.defaults.adapter=async config=>{
+ const path=config.url
+ let data=[]
+ if(path.endsWith('/chat/sessions')) data=sessions
+ else if(path.endsWith('/chat/history')) data=records
+ else if(path.endsWith('/memory')) data={items:memories,semanticSearch:false}
+ else if(path.endsWith('/revisions')) data=[{version:1,content:'预算不得超过10,000元。',reason:'superseded'}]
+ else if(path.endsWith('/work')) data=[{id:'work-1',step_no:1,tool_name:'searchGoods',status:'completed',arguments:'{"keyword":"采购"}',result:'库存12件，单价99.90元'}]
+ else if(path.includes('/memory/')&&config.method==='delete') memories=[]
+ else if(path.includes('/chat/session/')&&config.method==='delete') {sessions=[];records=[]}
+ return {data:{code:200,data:structuredClone(data)},status:200,statusText:'OK',headers:{},config}
+}
+const nativeFetch=window.fetch.bind(window)
+window.fetch=async (url,options)=>{
+ if(url!=='/api/ai/chat/send') return nativeFetch(url,options)
+ const body=JSON.parse(options.body)
+ records.push({sessionId:body.sessionId,role:'user',content:body.message})
+ const encoder=new TextEncoder()
+ return new Response(new ReadableStream({start(controller){
+   for(const event of [{type:'session',content:body.sessionId},{type:'memory',content:'已处理1条长期记忆（模拟）'},{type:'message',content:'收到，预算上限仍为 **12,345.67元**。'},{type:'done',content:''}]) controller.enqueue(encoder.encode('data: '+JSON.stringify(event)+'\n\n'))
+   controller.close()
+ }}),{headers:{'Content-Type':'text/event-stream'}})
+}
+createApp(ChatWidget).use(ElementPlus).mount('#app')
+</script></body></html>

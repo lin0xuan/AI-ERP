@@ -23,28 +23,31 @@ public class ChatController extends BaseController {
     private final ChatService chatService;
     private final AiConfigService aiConfigService;
     private final AiConversationHistoryService historyService;
+    private final com.aierp.erp.memory.MemoryStore memoryStore;
 
     @PostMapping(value = "/chat/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sendMessage(@RequestBody ChatSendRequest req) {
+        if (req.getMessage() == null || req.getMessage().isBlank() || req.getMessage().length() > 16000
+                || (req.getSessionId() != null && req.getSessionId().length() > 64)) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "消息须为1至16000字符，会话ID不超过64字符");
+        }
         String sessionId = req.getSessionId() != null && !req.getSessionId().isEmpty()
                 ? req.getSessionId() : UUID.randomUUID().toString();
         Long userId = getUserId();
 
-        historyService.saveMessage(sessionId, userId, "user", req.getMessage());
+
 
         AiConfig config = aiConfigService.getDefaultConfig();
         if (config == null) {
             return errorEmitter("请先在 AI 智能 > 模型配置 中添加并启用默认模型");
         }
 
-        SseEmitter emitter = new SseEmitter(180000L);
-        chatService.streamResponse(config, emitter, sessionId, userId);
-        return emitter;
+        return chatService.send(config, sessionId, userId, req.getMessage());
     }
 
     @GetMapping("/chat/history")
     public AjaxResult getHistory(@RequestParam String sessionId) {
-        List<AiConversationHistory> list = historyService.getConversation(sessionId);
+        List<AiConversationHistory> list = historyService.getConversation(sessionId, getUserId());
         return AjaxResult.success(list);
     }
 
@@ -56,9 +59,18 @@ public class ChatController extends BaseController {
 
     @DeleteMapping("/chat/session/{sessionId}")
     public AjaxResult deleteSession(@PathVariable String sessionId) {
-        historyService.deleteSession(sessionId, getUserId());
-        return AjaxResult.success();
+        long user = getUserId();
+        String lease = memoryStore.acquire(user);
+        try {
+            historyService.deleteSession(sessionId, user);
+            memoryStore.deleteSession(user, sessionId);
+            return AjaxResult.success();
+        } finally { memoryStore.release(user, lease); }
     }
+
+    @ExceptionHandler(com.aierp.erp.memory.MemoryStore.BusyException.class)
+    @ResponseStatus(org.springframework.http.HttpStatus.CONFLICT)
+    public AjaxResult busy(com.aierp.erp.memory.MemoryStore.BusyException error) { return AjaxResult.error(error.getMessage()); }
 
     private SseEmitter errorEmitter(String msg) {
         SseEmitter emitter = new SseEmitter();

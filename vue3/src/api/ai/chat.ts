@@ -43,3 +43,11 @@ export function deleteChatSession(sessionId: string) {
     method: 'delete'
   })
 }
+
+export function endChatSession(sessionId: string) {
+  return request({ url: `api/ai/chat/session/${encodeURIComponent(sessionId)}/end`, method: 'post' })
+}
+export function getMemories() { return request({ url: 'api/ai/memory', method: 'get' }) }
+export function forgetMemory(id: string) { return request({ url: `api/ai/memory/${encodeURIComponent(id)}`, method: 'delete' }) }
+export function getMemoryRevisions(id: string) { return request({ url: `api/ai/memory/${encodeURIComponent(id)}/revisions`, method: 'get' }) }
+export function getWorkMemory(sessionId: string) { return request({ url: `api/ai/chat/session/${encodeURIComponent(sessionId)}/work`, method: 'get' }) }

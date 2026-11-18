@@ -13,6 +13,7 @@ services:
       - erp-mysql:/var/lib/mysql
       - ./docs/qihang-erp.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./docs/migrations/20260910_add_amazon_shopify.sql:/docker-entrypoint-initdb.d/02-amazon-shopify.sql:ro
+      - ./docs/migrations/20261119_ai_memory.sql:/docker-entrypoint-initdb.d/03-ai-memory.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s

@@ -93,3 +93,19 @@ deepseek:
 token:
   expireTime: ${JWT_EXPIRE_MINUTES:60}
   secret: ${JWT_SECRET}
+
+# AI 对话记忆：默认自动创建独立记忆表，不修改业务表。
+ai:
+  memory:
+    initialize-schema: ${AI_MEMORY_INITIALIZE_SCHEMA:true}
+    context-chars: ${AI_MEMORY_CONTEXT_CHARS:48000}
+    recent-turns: 3
+    retrieval-chars: 6000
+    anchor-chars: ${AI_MEMORY_ANCHOR_CHARS:12000}
+    max-active: 500
+    idle-minutes: 15
+    retention-days: 180
+    maintenance-delay-ms: 60000
+    # 复用页面配置的模型服务密钥；留空时明确降级为关键词检索。
+    embedding-model: ${AI_MEMORY_EMBEDDING_MODEL:}
+    embedding-endpoint: ${AI_MEMORY_EMBEDDING_ENDPOINT:}

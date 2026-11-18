@@ -17,10 +17,12 @@ public class AiConversationHistoryServiceImpl
         implements AiConversationHistoryService {
 
     @Override
-    public List<AiConversationHistory> getConversation(String sessionId) {
+    public List<AiConversationHistory> getConversation(String sessionId, Long userId) {
         return lambdaQuery()
                 .eq(AiConversationHistory::getSessionId, sessionId)
+                .eq(AiConversationHistory::getUserId, userId)
                 .orderByAsc(AiConversationHistory::getTimestamp)
+                .orderByAsc(AiConversationHistory::getId)
                 .list();
     }
 

@@ -18,7 +18,8 @@
 | 模块 | 前端 | 后端 | 状态 | 备注 |
 |------|------|------|------|------|
 | AI 配置管理 | `views/ai/config.vue` | `AiConfigController` | ✅ 完整 | 支持多模型配置 |
-| AI 对话（SSE 流式） | `components/ChatWidget` | `ChatController` + `ChatService` | ✅ 完整 | 已集成到全局 Layout |
+| AI 对话（SSE 流式） | `components/ChatWidget` | `ChatController` + `ChatService` | 已实现并通过夹具测试 | 历史恢复、用户隔离、上下文管理；真实模型联调另验 |
+| 分层对话记忆 | ChatWidget 记忆面板 | `memory/` + `MemoryController` | 已实现并通过独立 MySQL 测试 | [配置与限制](AI对话记忆.md)；向量检索需配置 embedding 模型 |
 | AI Tool 系统 | — | 11 个 Tool 类，40 个 @Tool 方法 | ✅ 完整 | Spring AI 2.0 Tool Calling |
 | AI 简报（首页） | `dashboard/index.vue` | `AiBriefController` + `AiBriefService` | ✅ 完整 | 含超时降级 |
 | 数据分析（通用） | 通过 ChatWidget 对话 | `ChatController` + 40 个 Tool | ✅ 完整 | 替代独立分析页 |
