@@ -67,20 +67,65 @@ class ConversationMemoryTest {
         verify(store).extracted(1L,"s",9L);
         verify(store,never()).put(anyLong(),anyString(),anyString(),anyString(),anyString(),anyLong(),anyInt(),anyBoolean(),any(),any());
     }
-    @Test void oversizedAnchorsMoveVerbatimIntoLongTermMemory() {
+    @Test void oversizedAnchorsStayInSessionAndNeverBecomeLongTermFacts() {
         properties.setAnchorChars(150);
         when(store.session(1,"s")).thenReturn(Map.of());
         when(model.json(anyString(),any())).thenReturn(JSON.parseObject("{\"summary\":\"已压缩旧对话\"}"));
         var rows=new ArrayList<com.aierp.model.entity.AiConversationHistory>();
         for(int i=1;i<=6;i++) rows.add(message(i,"user","必须保留金额"+i+"00.50元，截止2026-12-03。"));
         memory.compact(1,"s",rows,true);
-        var stored=ArgumentCaptor.forClass(String.class);
-        verify(store,atLeastOnce()).put(eq(1L),eq("constraint"),startsWith("anchor."),stored.capture(),eq("s"),eq(6L),eq(8),eq(false),isNull(),eq(""));
-        assertTrue(stored.getAllValues().get(0).contains("必须保留金额100.50元，截止2026-12-03。"));
+        verify(store,never()).put(anyLong(),anyString(),anyString(),anyString(),anyString(),anyLong(),anyInt(),anyBoolean(),any(),any());
         var anchors=ArgumentCaptor.forClass(String.class);
         verify(store).summary(eq(1L),eq("s"),anyString(),anchors.capture(),eq(6L));
-        assertTrue(anchors.getValue().length()<=150);
+        assertTrue(anchors.getValue().length()>150);
         assertTrue(anchors.getValue().contains("600.50元"));
-        assertFalse(anchors.getValue().contains("100.50元"));
+        assertTrue(anchors.getValue().contains("100.50元"));
+    }
+
+    @Test void continuationRestoresPreviouslySpilledBudgetWithoutKeywordOrVectorMatch() {
+        properties.setAnchorChars(80);
+        when(store.session(1,"s")).thenReturn(Map.of("summary_cursor",6L,"summary","任务进行中", "anchors","[\"[user#6] 库存600件。\"]"));
+        var rows=List.of(message(1,"user","不要保存：本次预算为1000元。"),message(2,"user","本次预算改为2000元。"),
+                message(3,"user","库存300件。"),message(4,"user","库存400件。"),message(5,"user","库存500件。"),message(6,"user","库存600件。"),
+                message(7,"user","好的"),message(8,"user","照办"),message(9,"user","继续"));
+        String prompt=memory.context(1,"s",rows).stream().map(m->m.getText()).reduce("",String::concat);
+        assertTrue(prompt.contains("[user#2] 本次预算改为2000元。"));
+        assertTrue(prompt.contains("后续用户更正覆盖旧值"));
+        assertTrue(prompt.indexOf("1000元")<prompt.indexOf("2000元"));
+        verify(store,never()).put(anyLong(),anyString(),anyString(),anyString(),anyString(),anyLong(),anyInt(),anyBoolean(),any(),any());
+    }
+
+    @Test void denialBlocksExtractionAndMonthlyArchiveIncludingParaphrasedSummary() {
+        var rows=List.of(message(1,"user","不要保存：本次预算为1000元。"),message(2,"assistant","预算是1000元。"));
+        when(history.getConversation("s",1L)).thenReturn(rows);
+        when(store.session(1,"s")).thenReturn(Map.of("summary","预算1000元"));
+        assertEquals(0,memory.extract(1,"s",rows,false));
+        memory.archive(1,"s");
+        verifyNoInteractions(model);
+        verify(store,never()).put(anyLong(),anyString(),anyString(),anyString(),anyString(),anyLong(),anyInt(),anyBoolean(),any(),any());
+        verify(store).archived(1,"s");
+    }
+
+    @Test void compactionAfterForgetCannotWriteOldTextThroughAnotherPath() {
+        when(store.forgetCursor(1)).thenReturn(100L);
+        when(store.session(1,"s")).thenReturn(Map.of());
+        when(model.json(anyString(),any())).thenReturn(JSON.parseObject("{\"summary\":\"原文仍在当前会话\"}"));
+        properties.setAnchorChars(20);
+        memory.compact(1,"s",List.of(message(1,"user","预算1000元。"),message(2,"user","预算2000元。")),true);
+        verify(store,never()).put(anyLong(),anyString(),anyString(),anyString(),anyString(),anyLong(),anyInt(),anyBoolean(),any(),any());
+    }
+
+    @Test void legacyContradictorySpillsAreNeverRecalledEvenBeforeMigration() {
+        when(store.recall(1)).thenReturn(List.of(Map.of("kind","constraint","content","预算1000元"),Map.of("kind","constraint","content","预算2000元")));
+        assertEquals("",memory.retrieve(1,"预算"));
+        verify(store,never()).accessed(anyLong(),anyString());
+    }
+
+    @Test void mandatoryConstraintsOverBudgetFailInsteadOfSilentlyDroppingThem() {
+        when(store.session(1,"s")).thenReturn(Map.of("summary_cursor",1L,"summary","任务进行中"));
+        properties.setContextChars(100);
+        var rows=List.of(message(1,"user","必须遵守预算12345.67元。".repeat(50)),message(2,"user","继续"));
+        assertThrows(IllegalStateException.class,()->memory.context(1,"s",rows));
+        verify(store,never()).put(anyLong(),anyString(),anyString(),anyString(),anyString(),anyLong(),anyInt(),anyBoolean(),any(),any());
     }
 }

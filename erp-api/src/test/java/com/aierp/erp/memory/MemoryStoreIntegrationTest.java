@@ -32,6 +32,32 @@ class MemoryStoreIntegrationTest {
         assertEquals("预算100元",store.revisions(user,string(rows.get(0),"id")).get(0).get("content"));
         assertTrue(store.active(user+1).isEmpty());assertTrue(store.revisions(user+1,string(rows.get(0),"id")).isEmpty());
     }
+    @Test void allWritePathsRespectDenialAndForgetWatermark() {
+        String lease=store.acquire(user);
+        jdbc.update("UPDATE ai_memory_lock SET forget_cursor=100 WHERE user_id=?",user);
+        store.put(user,"fact","old.fact","预算1000元","s",99,8,true,null,"");
+        store.put(user,"episode","old.episode","旧会话摘要","s",100,8,false,null,"");
+        store.put(user,"fact","denied","不要保存：预算2000元","s",101,8,true,null,"");
+        store.put(user,"constraint","anchor.test","预算2000元","s",101,8,false,null,"");
+        store.put(user,"fact","secret","api_key=fixture-secret","s",101,8,true,null,"");
+        assertTrue(store.list(user).isEmpty());
+        store.put(user,"fact","new.fact","预算3000元","s",102,8,true,null,"");
+        assertEquals(1,store.recall(user).size());
+        store.release(user,lease);
+    }
+    @Test void upgradeRetiresConflictingLegacyAnchorsWithoutChangingConfirmedFacts() {
+        store.put(user,"fact","legacy.old","预算1000元","s",1,8,false,null,"");
+        store.put(user,"fact","legacy.new","预算2000元","s",2,8,false,null,"");
+        jdbc.update("UPDATE ai_memory_item SET kind='constraint' WHERE user_id=?",user);
+        store.put(user,"fact","confirmed.budget","预算2000元","s",3,9,true,null,"");
+        assertEquals(1,store.recall(user).size()); // safe even before migration
+        var noDdl=new MemoryProperties();noDdl.setInitializeSchema(false);
+        var upgraded=new MemoryStore(jdbc,noDdl);upgraded.initialize();upgraded.initialize();
+        assertEquals(2,jdbc.queryForObject("SELECT COUNT(*) FROM ai_memory_item WHERE user_id=? AND kind='constraint' AND status='retired'",Integer.class,user));
+        assertEquals(1,upgraded.recall(user).size());
+        assertEquals("confirmed.budget",upgraded.recall(user).get(0).get("fact_key"));
+        assertEquals(3,upgraded.list(user).size());
+    }
     @Test void leasesExcludeConcurrentTurnsAndIgnoreWrongRelease() {
         String lease=store.acquire(user);
         assertThrows(BusyException.class,()->store.acquire(user));

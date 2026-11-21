@@ -21,6 +21,8 @@ public class MemoryStore {
     public void initialize() {
         if (properties.isInitializeSchema())
             new ResourceDatabasePopulator(new ClassPathResource("db/ai-memory.sql")).execute(Objects.requireNonNull(jdbc.getDataSource()));
+        // Idempotent data repair also runs when schema creation is disabled.
+        new ResourceDatabasePopulator(new ClassPathResource("db/ai-memory-retire-anchors.sql")).execute(Objects.requireNonNull(jdbc.getDataSource()));
     }
 
     public String acquire(long user) {
@@ -56,14 +58,14 @@ public class MemoryStore {
         jdbc.update("UPDATE ai_memory_session SET extract_cursor=?,pending=0 WHERE user_id=? AND session_id=? AND extract_cursor<=?", cursor, user, session, cursor);
     }
     public List<Map<String,Object>> active(long user) {
-        return jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND status='active' ORDER BY updated_at DESC LIMIT ?", user, properties.getMaxActive() + 100);
+        return jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND status='active' AND kind<>'constraint' ORDER BY updated_at DESC LIMIT ?", user, properties.getMaxActive() + 100);
     }
     /** Recent rows alone would hide an important fact that has not changed for years. */
     public List<Map<String,Object>> recall(long user) {
         var merged = new LinkedHashMap<String, Map<String,Object>>();
-        for (var row : jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND status='active' AND (importance>=7 OR explicit_memory=1) ORDER BY importance DESC, updated_at DESC LIMIT ?", user, Math.max(1, properties.getRecallImportant())))
+        for (var row : jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND status='active' AND kind<>'constraint' AND (importance>=7 OR explicit_memory=1) ORDER BY importance DESC, updated_at DESC LIMIT ?", user, Math.max(1, properties.getRecallImportant())))
             merged.put(string(row, "id"), row);
-        for (var row : jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND status='active' ORDER BY updated_at DESC LIMIT ?", user, Math.max(1, properties.getRecallRecent())))
+        for (var row : jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND status='active' AND kind<>'constraint' ORDER BY updated_at DESC LIMIT ?", user, Math.max(1, properties.getRecallRecent())))
             merged.putIfAbsent(string(row, "id"), row);
         return new ArrayList<>(merged.values());
     }
@@ -74,6 +76,8 @@ public class MemoryStore {
     @Transactional
     public void put(long user, String kind, String key, String content, String session, long sourceId,
                     int importance, boolean explicit, String embedding, String embeddingModel) {
+        // All long-term paths, including episodic archives, must respect the deletion watermark.
+        if("constraint".equals(kind) || !MemoryPolicy.longTermAllowed(content) || sourceId<=forgetCursor(user)) return;
         String hash = MemoryPolicy.hash(key);
         var rows = jdbc.queryForList("SELECT * FROM ai_memory_item WHERE user_id=? AND kind=? AND key_hash=? FOR UPDATE", user, kind, hash);
         long time = now();

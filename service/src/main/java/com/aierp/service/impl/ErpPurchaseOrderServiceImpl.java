@@ -46,6 +46,7 @@ public class ErpPurchaseOrderServiceImpl extends ServiceImpl<ErpPurchaseOrderMap
     private final ErpPurchaseOrderItemMapper erpPurchaseOrderItemMapper;
     private final ErpPurchaseOrderShipMapper shipMapper;
     private final OGoodsSkuMapper goodsSkuMapper;
+    private final com.aierp.service.foundation.StockLedgerService stockLedger;
 
     
     @Override
@@ -186,6 +187,7 @@ public class ErpPurchaseOrderServiceImpl extends ServiceImpl<ErpPurchaseOrderMap
 
     @Override
     public int updateScmPurchaseOrder(PurchaseOrderOptionRequest request) {
+        stockLedger.requireLegacyPurchase(request.getId());
         ErpPurchaseOrder order = erpPurchaseOrderMapper.selectById(request.getId());
         if(order == null) return -1;
 

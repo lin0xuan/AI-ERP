@@ -50,6 +50,7 @@ public class ShopOrderServiceImpl extends ServiceImpl<ShopOrderMapper, ShopOrder
     private final ErpRecoveryRecordMapper recoveryRecordMapper;
     private final ErpRecoveryDeductionMapper recoveryDeductionMapper;
     private final OGoodsInventoryMapper goodsInventoryMapper;
+    private final com.aierp.service.foundation.StockLedgerService stockLedger;
 
     private void lockCreatedOrderItems(List<ShopOrderItem> items) {
         if (items == null) return;
@@ -59,6 +60,8 @@ public class ShopOrderServiceImpl extends ServiceImpl<ShopOrderMapper, ShopOrder
             }
             OGoodsInventory inventory = goodsInventoryMapper.selectOne(new LambdaQueryWrapper<OGoodsInventory>()
                     .eq(OGoodsInventory::getSkuCode, item.getSkuCode())
+                    .eq(OGoodsInventory::getMerchantId, item.getMerchantId())
+                    .eq(OGoodsInventory::getShopId, item.getShopId())
                     .eq(OGoodsInventory::getIsDelete, 0)
                     .orderByDesc(OGoodsInventory::getAvailableQuantity)
                     .last("LIMIT 1"));
@@ -66,11 +69,8 @@ public class ShopOrderServiceImpl extends ServiceImpl<ShopOrderMapper, ShopOrder
                     || inventory.getAvailableQuantity() < item.getQuantity()) {
                 throw new IllegalStateException("库存不足，无法锁库：" + item.getSkuCode());
             }
-            OGoodsInventory update = new OGoodsInventory();
-            update.setId(inventory.getId());
-            update.setLockedQuantity((inventory.getLockedQuantity() == null ? 0 : inventory.getLockedQuantity()) + item.getQuantity());
-            update.setAvailableQuantity(inventory.getAvailableQuantity() - item.getQuantity());
-            goodsInventoryMapper.updateById(update);
+            String lockKey=item.getId()==null?java.util.UUID.randomUUID().toString():"order-lock:"+item.getId();
+            stockLedger.move(inventory.getId(),0,item.getQuantity(),null,lockKey,"ORDER_RESERVATION","system","订单创建锁库");
         }
     }
 

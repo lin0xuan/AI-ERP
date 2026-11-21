@@ -2,6 +2,9 @@ server:
   port: 8088
 
 spring:
+  config:
+    # Support launching from the repository root or the erp-api module directory.
+    import: "optional:file:../.env[.properties],optional:file:./.env[.properties]"
   application:
     name: ai-erp-api
 
@@ -96,12 +99,15 @@ token:
 
 # AI 对话记忆：默认自动创建独立记忆表，不修改业务表。
 ai:
+  provider:
+    api-key: ${SILICONFLOW_API_KEY:}
+    endpoint: ${AI_CHAT_ENDPOINT:https://api.siliconflow.cn/v1}
+    model: ${AI_CHAT_MODEL:deepseek-ai/DeepSeek-V4.1-Flash}
   memory:
     initialize-schema: ${AI_MEMORY_INITIALIZE_SCHEMA:true}
     context-chars: ${AI_MEMORY_CONTEXT_CHARS:48000}
     recent-turns: 3
     retrieval-chars: 6000
-    anchor-chars: ${AI_MEMORY_ANCHOR_CHARS:12000}
     max-active: 500
     idle-minutes: 15
     retention-days: 180
@@ -109,3 +115,4 @@ ai:
     # 复用页面配置的模型服务密钥；留空时明确降级为关键词检索。
     embedding-model: ${AI_MEMORY_EMBEDDING_MODEL:}
     embedding-endpoint: ${AI_MEMORY_EMBEDDING_ENDPOINT:}
+    embedding-api-key: ${AI_MEMORY_EMBEDDING_API_KEY:}

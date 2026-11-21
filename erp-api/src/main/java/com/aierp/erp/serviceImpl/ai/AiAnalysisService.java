@@ -1,5 +1,8 @@
 package com.aierp.erp.serviceImpl.ai;
 
+import com.aierp.erp.datacenter.DataCenterService;
+import com.aierp.erp.datacenter.DataCenterAccess;
+import com.alibaba.fastjson2.JSON;
 import com.aierp.model.entity.AiAnalysisRecord;
 import com.aierp.model.entity.OGoodsInventory;
 import com.aierp.model.entity.OOrder;
@@ -14,7 +17,6 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.TreeMap;
 
 /**
  * 用库里的真实汇总数做分析。没有默认模型时只返回汇总，不生成看起来像结论的文字。
@@ -23,7 +25,7 @@ import java.util.TreeMap;
 @RequiredArgsConstructor
 public class AiAnalysisService {
 
-    private static final int ORDER_LIMIT = 2000;
+    private final DataCenterService dataCenterService;
 
     private final OOrderService orderService;
     private final OGoodsInventoryService inventoryService;
@@ -82,40 +84,9 @@ public class AiAnalysisService {
     }
 
     private String salesFacts() {
-        LocalDateTime start = LocalDateTime.now().minusDays(7);
-        List<OOrder> orders = orderService.list(new LambdaQueryWrapper<OOrder>()
-                .select(OOrder::getAmount, OOrder::getOrderTime, OOrder::getOrderStatus)
-                .ge(OOrder::getOrderTime, start)
-                .notIn(OOrder::getOrderStatus, 11, 13, 29)
-                .orderByAsc(OOrder::getOrderTime)
-                .last("LIMIT " + ORDER_LIMIT));
-        if (orders.isEmpty()) {
-            return "最近 7 天没有可统计的订单。";
-        }
-        TreeMap<LocalDate, long[]> byDay = new TreeMap<>();
-        double totalAmount = 0;
-        for (OOrder order : orders) {
-            if (order.getOrderTime() == null) {
-                continue;
-            }
-            double amount = order.getAmount() == null ? 0 : order.getAmount();
-            totalAmount += amount;
-            long[] agg = byDay.computeIfAbsent(order.getOrderTime().toLocalDate(), day -> new long[2]);
-            agg[0] += Math.round(amount * 100);
-            agg[1] += 1;
-        }
-        StringBuilder text = new StringBuilder();
-        text.append("统计区间：").append(start.toLocalDate()).append(" 至今天。\n");
-        text.append("订单数：").append(orders.size());
-        if (orders.size() >= ORDER_LIMIT) {
-            text.append("（已截断到 ").append(ORDER_LIMIT).append(" 笔）");
-        }
-        text.append("\n订单金额合计：").append(String.format("%.2f", totalAmount)).append("\n按日：\n");
-        byDay.forEach((day, agg) -> text.append(day)
-                .append(" 金额 ").append(String.format("%.2f", agg[0] / 100.0))
-                .append(" 订单 ").append(agg[1]).append('\n'));
-        text.append("没有提供商品、渠道或客户明细，不要补充这些维度。");
-        return text.toString();
+        DataCenterAccess.require("read");
+        LocalDate today = LocalDate.now(DataCenterService.ZONE);
+        return JSON.toJSONString(dataCenterService.metrics(today.minusDays(6), today, null, null));
     }
 
     private String askModel(String type, String facts) {

@@ -190,6 +190,9 @@ public class ErpStockInServiceImpl extends ServiceImpl<ErpStockInMapper, ErpStoc
             if (stockInItem == null) {
                 return ResultVo.error(ResultVoEnum.DataError, "数据错误！没有找到入库单明细");
             }
+            if (stockInItem.getStatus() != null && stockInItem.getStatus() == 2) {
+                return ResultVo.error("该商品已全部入库");
+            }
             OGoodsSku oGoodsSku = skuService.getById(stockInItem.getSkuId());
 
             // 使用主系统库存表 OGoodsInventory
@@ -219,7 +222,7 @@ public class ErpStockInServiceImpl extends ServiceImpl<ErpStockInMapper, ErpStoc
                 oGoodsInventoryService.save(inv);
                 goodsInventoryId = inv.getId();
             } else {
-                oGoodsInventoryService.addStock(invList.get(0).getId(), item.getIntoQuantity());
+                oGoodsInventoryService.addStock(invList.get(0).getId(), item.getIntoQuantity(), "stock-in:"+stockInItem.getId()+":"+stockInItem.getInQuantity());
                 goodsInventoryId = invList.get(0).getId();
             }
 
@@ -294,6 +297,9 @@ public class ErpStockInServiceImpl extends ServiceImpl<ErpStockInMapper, ErpStoc
         if (stockInItem == null) {
             return ResultVo.error(ResultVoEnum.DataError, "数据错误！没有找到入库单明细");
         }
+        if (stockInItem.getStatus() != null && stockInItem.getStatus() == 2) {
+            return ResultVo.error("该商品已全部入库");
+        }
         // 开始入库
         OGoodsSku oGoodsSku = skuService.getById(stockInItem.getSkuId());
         if (oGoodsSku == null) return ResultVo.error("数据错误！没有找到入库商品SKU信息");
@@ -326,7 +332,7 @@ public class ErpStockInServiceImpl extends ServiceImpl<ErpStockInMapper, ErpStoc
             oGoodsInventoryService.save(inv);
             goodsInventoryId = inv.getId();
         } else {
-            oGoodsInventoryService.addStock(invList.get(0).getId(), request.getIntoQuantity());
+            oGoodsInventoryService.addStock(invList.get(0).getId(), request.getIntoQuantity(), "stock-in:"+stockInItem.getId()+":"+stockInItem.getInQuantity());
             goodsInventoryId = invList.get(0).getId();
         }
 
@@ -451,7 +457,7 @@ public class ErpStockInServiceImpl extends ServiceImpl<ErpStockInMapper, ErpStoc
                 oGoodsInventoryService.save(inv);
                 goodsInventoryId = inv.getId();
             } else {
-                oGoodsInventoryService.addStock(invList.get(0).getId(), intoQty);
+                oGoodsInventoryService.addStock(invList.get(0).getId(), intoQty, "stock-in:"+stockInItem.getId()+":"+stockInItem.getInQuantity());
                 goodsInventoryId = invList.get(0).getId();
             }
 

@@ -27,6 +27,11 @@ public interface OGoodsInventoryService extends IService<OGoodsInventory> {
     boolean deductStock(Long inventoryId, Integer quantity);
 
     /**
+     * 按业务键扣减库存。同一业务键重复调用不会再次扣减。
+     */
+    boolean deductStock(Long inventoryId, Integer quantity, String businessKey);
+
+    /**
      * 增加库存（入库时调用）
      *
      * @param inventoryId 库存记录ID
@@ -34,6 +39,11 @@ public interface OGoodsInventoryService extends IService<OGoodsInventory> {
      * @return 是否成功
      */
     boolean addStock(Long inventoryId, Integer quantity);
+
+    /**
+     * 按业务键增加库存。同一业务键重复调用不会再次增加。
+     */
+    boolean addStock(Long inventoryId, Integer quantity, String businessKey);
 
     /**
      * 锁定/解锁库存

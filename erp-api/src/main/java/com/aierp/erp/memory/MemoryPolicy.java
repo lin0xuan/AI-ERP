@@ -10,6 +10,11 @@ import java.util.regex.Pattern;
 public final class MemoryPolicy {
     private MemoryPolicy() {}
     private static final Pattern CRITICAL = Pattern.compile("[0-9０-９]|[零一二三四五六七八九十百千万亿]+[元年月日个件%％]|必须|禁止|不能|不要|不得|仅限|务必|预算|截止|上限|下限|至少|至多|不超过|约束|must|never|only|deadline|budget",Pattern.CASE_INSENSITIVE);
+    public static boolean longTermAllowed(String text) {
+        if(text==null || text.isBlank()) return false;
+        return !Pattern.compile("不要记住|别记住|不用记住|不要保存|不要存入长期记忆|不许保存|不得保存|不允许保存|(?:do not|don't|never)\\s+(?:save|store|remember)",Pattern.CASE_INSENSITIVE).matcher(text).find()
+                && redact(text).equals(text);
+    }
     public static boolean explicit(String text) {
         return text.matches("(?s).*(请记住|记住[：:，, ]|记住我的|记住我|以后都|长期记住|remember that|remember my).*" )
                 && !text.matches("(?s).*(不要记住|别记住|不用记住|不要保存).*" );

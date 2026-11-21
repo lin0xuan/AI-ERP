@@ -35,6 +35,7 @@ public class ErpPurchaseOrderShipServiceImpl extends ServiceImpl<ErpPurchaseOrde
     private final ErpPurchaseOrderMapper orderMapper;
     private final ErpPurchaseOrderItemMapper orderItemMapper;
     private final ErpWarehouseMapper warehouseMapper;
+    private final com.aierp.service.foundation.StockLedgerService stockLedger;
 
 
     @Override
@@ -85,7 +86,8 @@ public class ErpPurchaseOrderShipServiceImpl extends ServiceImpl<ErpPurchaseOrde
     {
         ErpPurchaseOrderShip ship = shipMapper.selectById(erpPurchaseOrderShip.getId());
         if(ship== null) return -1;
-        else if(ship.getStatus()!=0)return -2;
+        stockLedger.requireLegacyPurchase(ship.getOrderId());
+        if(ship.getStatus()!=0)return -2;
         // 更新采购单状态
         ErpPurchaseOrder order = new ErpPurchaseOrder();
         order.setId(erpPurchaseOrderShip.getOrderId());
@@ -114,7 +116,8 @@ public class ErpPurchaseOrderShipServiceImpl extends ServiceImpl<ErpPurchaseOrde
         if(bo.getWarehouseId()==null) return ResultVo.error("缺少参数：warehouseId");
         ErpPurchaseOrderShip ship = shipMapper.selectById(bo.getId());
         if (ship == null) return ResultVo.error("采购物流不存在");
-        else if (ship.getStatus().intValue() == 2) return ResultVo.error("已处理过了请勿重复操作");
+        stockLedger.requireLegacyPurchase(ship.getOrderId());
+        if (ship.getStatus().intValue() == 2) return ResultVo.error("已处理过了请勿重复操作");
         ErpWarehouse warehouse = warehouseMapper.selectById(bo.getWarehouseId());
         if (warehouse == null) return ResultVo.error("仓库不存在");
         // 子表（使用采购单item数据）

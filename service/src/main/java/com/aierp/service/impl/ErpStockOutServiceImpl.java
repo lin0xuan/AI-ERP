@@ -166,6 +166,7 @@ public class ErpStockOutServiceImpl extends ServiceImpl<ErpStockOutMapper, ErpSt
 
         ErpStockOutItem outItem = outItemService.getById(request.getEntryItemId());
         if(outItem == null) return ResultVo.error(1500,"出库数据错误");
+        if(outItem.getStatus()!=null && outItem.getStatus()==2) return ResultVo.error(1500,"出库明细已完成，请勿重复出库");
         // 判断库存够不够扣减的
         if(outItem.getBatchId()!=null) {
             /***指定了库存批次***减库存****/
@@ -179,7 +180,7 @@ public class ErpStockOutServiceImpl extends ServiceImpl<ErpStockOutMapper, ErpSt
 
             // 2扣减总库存
             if(batch.getInventoryId()!=null){
-                oGoodsInventoryService.deductStock(batch.getInventoryId(), request.getOutQty().intValue());
+                oGoodsInventoryService.deductStock(batch.getInventoryId(), request.getOutQty().intValue(), "stock-out:"+outItem.getId()+":"+outItem.getOutQuantity());
             }
 
             // 记录发货备货批次信息(出库类型：1 且 存在sourceOrderItemId)
@@ -293,7 +294,7 @@ public class ErpStockOutServiceImpl extends ServiceImpl<ErpStockOutMapper, ErpSt
                 }
             }
             // 减少总库存
-            oGoodsInventoryService.deductStock(inventoryList.get(0).getId(), request.getOutQty().intValue());
+            oGoodsInventoryService.deductStock(inventoryList.get(0).getId(), request.getOutQty().intValue(), "stock-out:"+outItem.getId()+":"+outItem.getOutQuantity());
         }
 
 

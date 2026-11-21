@@ -49,3 +49,8 @@ docs/AI-INFRASTRUCTURE.md
 
 # 本机密钥，由 config/application.yml.example 复制而来
 config/application.yml
+
+# Local model credentials
+.env
+.env.local
+.env.*.local

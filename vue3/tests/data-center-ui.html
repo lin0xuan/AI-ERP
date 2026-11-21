@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>数据中台界面验收夹具</title></head>
+<body style="margin:0"><div style="padding:8px;background:#fff3cd">界面验收夹具：使用合成数据，不连接业务库或模型。</div><div id="app"></div>
+<script type="module">
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import ElementPlus from 'element-plus'
+import 'element-plus/dist/index.css'
+import Page from '/src/views/data-center/index.vue'
+import request from '/src/utils/request'
+import { useUserStore } from '/src/store/modules/user'
+const pinia=createPinia()
+useUserStore(pinia).permissions=['*:*:*']
+const jobs=[{id:'fixture-batch-001',status:'SUCCESS',started_at:Date.now()-60000,finished_at:Date.now(),row_count:1250,issue_count:1,mapping_version:0}]
+const mappings=[]
+const names={order:'订单',refund:'退款',item:'商品明细',inventory:'库存',purchase:'采购'}
+const definitions=[{code:'netSales',name:'净销售额（支付批次）',unit:'元/CNY',definition:'支付金额减该批订单截至快照的成功退款；保留源支付字段口径，不等同财务确认收入。'}]
+request.defaults.adapter=async config=>{
+ const path=config.url.split('/').pop(),p=config.params||{}
+ let data
+ if(path==='catalog')data={metricVersion:'payment-cohort-v1',metrics:definitions,sources:Object.keys(names).map(kind=>({kind,table:kind==='order'?'oms_shop_order':kind,description:names[kind]+'主题快照'}))}
+ else if(path==='jobs')data=jobs
+ else if(path==='mappings'&&config.method==='put'){const m=JSON.parse(config.data);mappings.push({entity_type:m.entityType,source_key:m.sourceKey,canonical_code:m.canonicalCode,display_name:m.displayName,version:mappings.length+1});data={}}
+ else if(path==='mappings')data=mappings
+ else if(path==='metrics')data={batchId:p.batch,metricVersion:'payment-cohort-v1',from:p.from,to:p.to,shop:p.shop||'',paidAmount:'128000.50',refundAmount:'3200.00',netSales:'124800.50',availableStock:1250,purchaseAmount:'36000.00',excludedRows:0,snapshot:jobs[0],definitions}
+ else if(path==='rows')data={total:1,rows:p.issues?[{source_id:1,severity:'WARN',rule_code:'UNMAPPED_SKU',message:'SKU 未映射，暂保留来源编码'}]:[{source_id:1,source_key:'1:2:3:ORDER001',shop_code:'SHOP-A',sku_code:'SKU-001',amount_minor:10000,quantity:1,eligible:1}]}
+ else if(path==='lineage')data={batchId:p.batch,sourceTable:'oms_shop_order',sourceId:p.id,fact:{payment_amount:10000,pay_time:1795190400},issues:[]}
+ else if(path==='sync'){const job={...jobs[0],id:'fixture-batch-'+Date.now(),finished_at:Date.now()};jobs.unshift(job);data=job}
+ else throw Error('夹具未实现接口 '+config.url)
+ return {data:{code:200,data:structuredClone(data)},status:200,statusText:'OK',headers:{},config}
+}
+createApp(Page).use(pinia).use(ElementPlus).mount('#app')
+</script></body></html>

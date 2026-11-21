@@ -17,7 +17,9 @@ class MemoryModelTest {
     @Test void providerProtocolSupportsRealChatClientAndEmbeddingRequests() throws Exception {
         HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         AtomicReference<String> embeddingInput=new AtomicReference<>();
+        AtomicReference<String> embeddingAuth=new AtomicReference<>();
         server.createContext("/v1/embeddings",exchange->{
+            embeddingAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
             embeddingInput.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
             byte[] response="{\"data\":[{\"index\":0,\"embedding\":[0.25,0.75]}]}".getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,response.length);exchange.getResponseBody().write(response);exchange.close();
@@ -35,7 +37,13 @@ class MemoryModelTest {
             var model=new MemoryModel(new AiOrchestrationService(configs),properties);
             assertArrayEquals(new float[]{.25f,.75f},model.embed("预算"));
             assertEquals("预算",JSON.parseObject(embeddingInput.get()).getString("input"));
+            assertEquals("Bearer test-fixture-only",embeddingAuth.get());
             assertEquals("预算为99.90元",model.json("总结",Map.of("text","预算为99.90元")).getString("summary"));
+            properties.setEmbeddingApiKey("fixture-separate-vector-key");
+            properties.setEmbeddingEndpoint(config.getApiEndpoint());
+            when(configs.getDefaultConfig()).thenReturn(null);
+            assertArrayEquals(new float[]{.25f,.75f},model.embed("独立向量凭据"));
+            assertEquals("Bearer fixture-separate-vector-key",embeddingAuth.get());
         } finally {server.stop(0);}
     }
 }

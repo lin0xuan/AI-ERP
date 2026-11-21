@@ -34,14 +34,18 @@ public class MemoryModel {
     public float[] embed(String text) {
         if(properties.getEmbeddingModel().isBlank()) return new float[0];
         var config=orchestration.getDefaultConfig();
-        if(config==null) return new float[0];
-        String endpoint=properties.getEmbeddingEndpoint().isBlank() ? config.getApiEndpoint() : properties.getEmbeddingEndpoint();
+        String key=properties.getEmbeddingApiKey();
+        if(key.isBlank() && config!=null) key=config.getApiKey();
+        if(key==null || key.isBlank()) return new float[0];
+        String endpoint=properties.getEmbeddingEndpoint();
+        if(endpoint.isBlank() && config!=null) endpoint=config.getApiEndpoint();
+        if(endpoint==null || endpoint.isBlank()) return new float[0];
         endpoint=endpoint.replaceAll("/+$", "");
         if(!endpoint.endsWith("/v1")) endpoint+="/v1";
         var factory=new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5000); factory.setReadTimeout(15000);
         String raw=RestClient.builder().requestFactory(factory).build().post().uri(endpoint+"/embeddings")
-                .header("Authorization","Bearer "+config.getApiKey()).header("Content-Type","application/json")
+                .header("Authorization","Bearer "+key.trim()).header("Content-Type","application/json")
                 .body(JSON.toJSONString(Map.of("model",properties.getEmbeddingModel(),"input",text)))
                 .retrieve().body(String.class);
         JSONArray values=JSON.parseObject(raw).getJSONArray("data").getJSONObject(0).getJSONArray("embedding");

@@ -12,7 +12,8 @@ public class MemoryProperties {
     private int contextChars = 48000;
     private int recentTurns = 3;
     private int retrievalChars = 6000;
-    /** Verbatim constraint lines kept inside the prompt. Older lines move to long-term memory unchanged. */
+    /** Legacy setting, retained for config compatibility; no longer truncates or exports anchors. */
+    @Deprecated
     private int anchorChars = 12000;
     private int recallRecent = 400;
     private int recallImportant = 400;
@@ -21,4 +22,6 @@ public class MemoryProperties {
     private int retentionDays = 180;
     private String embeddingModel = "";
     private String embeddingEndpoint = "";
+    @lombok.ToString.Exclude
+    private String embeddingApiKey = "";
 }

@@ -21,6 +21,7 @@ import org.springframework.stereotype.Service;
 public class OGoodsInventoryServiceImpl
         extends ServiceImpl<OGoodsInventoryMapper, OGoodsInventory>
         implements OGoodsInventoryService {
+    private final com.aierp.service.foundation.StockLedgerService ledger;
 
     @Override
     public PageResult<OGoodsInventory> queryPageList(OGoodsInventory bo, PageQuery pageQuery) {
@@ -42,39 +43,33 @@ public class OGoodsInventoryServiceImpl
 
     @Override
     public boolean deductStock(Long inventoryId, Integer quantity) {
-        OGoodsInventory inv = this.getById(inventoryId);
-        if (inv == null || inv.getQuantity() < quantity) return false;
+        return deductStock(inventoryId,quantity,java.util.UUID.randomUUID().toString());
+    }
 
-        OGoodsInventory update = new OGoodsInventory();
-        update.setId(inventoryId);
-        update.setQuantity(inv.getQuantity() - quantity);
-        update.setAvailableQuantity(inv.getAvailableQuantity() - quantity);
-        return this.updateById(update);
+    @Override
+    public boolean deductStock(Long inventoryId, Integer quantity, String businessKey) {
+        positive(quantity);
+        ledger.move(inventoryId,-quantity,0,null,businessKey,"LEGACY_ISSUE","system","原出库服务");
+        return true;
     }
 
     @Override
     public boolean addStock(Long inventoryId, Integer quantity) {
-        OGoodsInventory inv = this.getById(inventoryId);
-        if (inv == null) return false;
+        return addStock(inventoryId,quantity,java.util.UUID.randomUUID().toString());
+    }
 
-        OGoodsInventory update = new OGoodsInventory();
-        update.setId(inventoryId);
-        update.setQuantity(inv.getQuantity() + quantity);
-        update.setAvailableQuantity(inv.getAvailableQuantity() + quantity);
-        return this.updateById(update);
+    @Override
+    public boolean addStock(Long inventoryId, Integer quantity, String businessKey) {
+        positive(quantity);
+        ledger.move(inventoryId,quantity,0,null,businessKey,"LEGACY_RECEIPT","system","原入库服务，成本待核定");
+        return true;
     }
 
     @Override
     public boolean lockStock(Long inventoryId, Integer quantity) {
-        OGoodsInventory inv = this.getById(inventoryId);
-        if (inv == null) return false;
-        // 如果是负数（解锁），不能解锁超过已锁定的数量
-        if (quantity < 0 && inv.getLockedQuantity() < -quantity) return false;
-
-        OGoodsInventory update = new OGoodsInventory();
-        update.setId(inventoryId);
-        update.setLockedQuantity(inv.getLockedQuantity() + quantity);
-        update.setAvailableQuantity(inv.getAvailableQuantity() - quantity);
-        return this.updateById(update);
+        if(quantity==null || quantity==0) throw new IllegalArgumentException("锁定/释放数量不能为空或零");
+        ledger.move(inventoryId,0,quantity,null,java.util.UUID.randomUUID().toString(),"LEGACY_RESERVATION","system","原锁库服务");
+        return true;
     }
+    private void positive(Integer quantity) {if(quantity==null || quantity<=0) throw new IllegalArgumentException("数量必须大于零");}
 }
