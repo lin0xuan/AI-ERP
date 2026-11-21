@@ -74,6 +74,7 @@ public final class MemoryPolicy {
     public static String redact(String text) {
         if(text==null) return "";
         return text.replaceAll("(?i)([\\\"']?(?:api[_-]?key|password|token|secret|authorization)[\\\"']?\\s*[:=]\\s*)[\\\"']?[^\\s,}\\\"']+[\\\"']?", "$1[REDACTED]")
-                .replaceAll("(?i)Bearer\\s+[a-z0-9_.-]+","Bearer [REDACTED]");
+                .replaceAll("(?i)Bearer\\s+[a-z0-9_.-]+","Bearer [REDACTED]")
+                .replaceAll("(?<!\\d)1[3-9]\\d{9}(?!\\d)", "[手机号]");
     }
 }

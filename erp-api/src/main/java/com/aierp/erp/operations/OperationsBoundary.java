@@ -23,7 +23,7 @@ public class OperationsBoundary implements WebMvcConfigurer {
                 try {actor=OperationsController.actor();} catch(RuntimeException ex) {return true;}
                 if(!operations.scoped(actor)) return true;
                 String controller=method.getBeanType().getSimpleName();
-                if(Set.of("OperationsController","ChatController","MemoryController","SysLoginController").contains(controller)) return true;
+                if(Set.of("OperationsController","ChatController","MemoryController","AiTraceController","SysLoginController").contains(controller)) return true;
                 throw new AccessDeniedException("此账号按商户/店铺/仓库范围授权，请使用业务工作台；旧模块尚未支持此数据范围");
             }
         }).addPathPatterns("/api/**");

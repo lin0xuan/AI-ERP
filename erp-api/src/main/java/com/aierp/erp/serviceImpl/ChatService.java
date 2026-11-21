@@ -4,6 +4,7 @@ import com.aierp.erp.serviceImpl.ai.*;
 import com.aierp.erp.memory.*;
 import com.aierp.erp.datacenter.*;
 import com.aierp.erp.operations.*;
+import com.aierp.erp.trace.AiTraceService;
 import com.aierp.model.entity.AiConfig;
 import com.aierp.service.AiConversationHistoryService;
 import com.alibaba.fastjson2.JSONObject;
@@ -39,6 +40,7 @@ public class ChatService {
     private final StockFlowTools stockFlowTools;
     private final DataCenterService dataCenterService;
     private final OperationsService operationsService;
+    private final AiTraceService traceService;
 
     private static final String SYSTEM_PROMPT = """
             你是AI ERP智能助手，帮助处理电商、订单、商品、库存、采购、仓库、售后问题，用专业简洁中文回答。
@@ -51,6 +53,7 @@ public class ChatService {
             """;
 
     public SseEmitter send(AiConfig config,String sessionId,Long userId,String text) {
+        String traceId=traceService.start(userId,sessionId,text,config.getModelName());
         var operationsActor=OperationsController.actor();
         boolean scoped=operationsService.scoped(operationsActor);
         var operationsTools=new OperationsTools(operationsService,operationsActor);
@@ -59,8 +62,16 @@ public class ChatService {
         SseEmitter emitter=new SseEmitter(600000L);
         AtomicBoolean finished=new AtomicBoolean();
         AtomicReference<reactor.core.Disposable> subscription=new AtomicReference<>();
-        String run=UUID.randomUUID().toString();
+        String run=traceId;
         AtomicReference<String> workId=new AtomicReference<>();
+        AtomicReference<String> modelEvent=new AtomicReference<>();
+        MemoryTools.TraceHook traceHook=(step,name,status,input,output)->{
+            traceService.noteTool(traceId,step,name,status,input,output);
+            JSONObject stepEvent=new JSONObject();
+            stepEvent.put("step",step);stepEvent.put("name",name);stepEvent.put("status",status);
+            stepEvent.put("preview",preview(output!=null?output:input));
+            sendJsonEvent(emitter,"step",stepEvent.toJSONString());
+        };
         java.util.function.Consumer<String> finish=status->{
             if(!finished.compareAndSet(false,true)) return;
             try {
@@ -72,7 +83,7 @@ public class ChatService {
         // A disconnected client does not release the lease while a blocking tool/model is still running.
         // The bounded model timeout completes the turn and releases it; reopening restores the saved answer.
         try {
-            historyService.saveMessage(sessionId,userId,"user",text);
+            historyService.saveMessage(sessionId,userId,"user",text); sendJsonEvent(emitter,"trace",traceId);
             memoryStore.touch(userId,sessionId,true);
             workId.set(memoryStore.startWork(userId,sessionId,run,0,"__turn__",MemoryPolicy.redact(text)));
             chatMemoryExecutor.execute(()->{
@@ -92,34 +103,51 @@ public class ChatService {
                     messages.add(new SystemMessage(SYSTEM_PROMPT+"\n本轮记忆写入状态："+memoryStatus));
                     messages.addAll(memory.context(userId,sessionId,history));
                     if(finished.get()) return;
-                    var callbacks=scoped ? MemoryTools.tracked(memoryStore,userId,sessionId,run,operationsTools,new MemoryTools(memoryStore,userId,sessionId)) : MemoryTools.tracked(memoryStore,userId,sessionId,run,
+                    var callbacks=scoped ? MemoryTools.observe(memoryStore,userId,sessionId,run,traceHook,operationsTools,new MemoryTools(memoryStore,userId,sessionId)) : MemoryTools.observe(memoryStore,userId,sessionId,run,traceHook,
                             goodsTools,orderTools,refundTools,inventoryTools,shopTools,purchaseTools,memberTools,
                             supplierTools,logisticsTools,warehouseTools,stockFlowTools,dataCenterTools,operationsTools,new MemoryTools(memoryStore,userId,sessionId));
                     StringBuilder response=new StringBuilder();
+                    modelEvent.set(traceService.event(traceId,0,"MODEL",config.getModelName(),""));
                     var disposable=orchestrationService.buildChatClient(config).prompt().messages(messages).toolCallbacks(callbacks)
                             .stream().content().timeout(java.time.Duration.ofMinutes(8)).subscribe(chunk->{
                                 if(!finished.get()) {response.append(chunk);sendJsonEvent(emitter,"message",chunk);}
                             },error->{
                                 log.warn("AI stream failed ({})",error.getClass().getSimpleName());
-                                sendJsonEvent(emitter,"error","AI服务暂时不可用，历史与工作记录已保留");
+                                traceService.finishEvent(modelEvent.get(),"", "FAILED");
+                                endTrace(traceId,response.toString(),"FAILED",error.getClass().getSimpleName());sendJsonEvent(emitter,"error","AI服务暂时不可用，历史与工作记录已保留");
                                 finish.accept("failed");safeComplete(emitter);
                             },()->{
                                 if(finished.get()) return;
                                 try {
                                     if(!response.isEmpty()) historyService.saveMessage(sessionId,userId,"assistant",response.toString());
-                                    finish.accept("completed");sendJsonEvent(emitter,"done","");
-                                } catch(Exception error) {finish.accept("failed");sendJsonEvent(emitter,"error","回答保存失败，请查看历史后重试");}
+                                    traceService.finishEvent(modelEvent.get(),"流式输出结束","COMPLETED");
+                                    endTrace(traceId,response.toString(),"COMPLETED",null);finish.accept("completed");sendJsonEvent(emitter,"done","");
+                                } catch(Exception error) {
+                                    traceService.finishEvent(modelEvent.get(),"", "FAILED");
+                                    endTrace(traceId,response.toString(),"FAILED",error.getClass().getSimpleName());
+                                    finish.accept("failed");sendJsonEvent(emitter,"error","回答保存失败，请查看历史后重试");
+                                }
                                 finally {safeComplete(emitter);}
                             });
                     subscription.set(disposable);if(finished.get()) disposable.dispose();
                 } catch(Exception error) {
                     log.warn("AI conversation failed ({})",error.getClass().getSimpleName());
+                    traceService.finishEvent(modelEvent.get(),"", "FAILED");
                     sendJsonEvent(emitter,"error",error instanceof IllegalStateException ? error.getMessage() : "对话处理失败，原始消息已保留");
-                    finish.accept("failed");safeComplete(emitter);
+                    endTrace(traceId,"","FAILED",error.getClass().getSimpleName());finish.accept("failed");safeComplete(emitter);
                 }
             });
-        } catch(Exception error) {finish.accept("failed");safeComplete(emitter);throw error;}
+        } catch(Exception error) {endTrace(traceId,"","FAILED",error.getClass().getSimpleName());finish.accept("failed");safeComplete(emitter);throw error;}
         return emitter;
+    }
+    private void endTrace(String traceId,String output,String status,String error) {
+        try { traceService.finish(traceId,output,status,error); }
+        catch(RuntimeException ex) { log.warn("trace finish failed ({})",ex.getClass().getSimpleName()); }
+    }
+    private static String preview(String text) {
+        if(text==null) return "";
+        String flat=text.replaceAll("\\s+"," ").trim();
+        return flat.length()<=160?flat:flat.substring(0,160)+"…";
     }
     private void sendJsonEvent(SseEmitter emitter,String type,String content) {
         try {

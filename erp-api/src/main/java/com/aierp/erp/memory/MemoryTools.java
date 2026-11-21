@@ -39,25 +39,47 @@ public class MemoryTools {
         return JSON.toJSONString(java.util.Map.of("content",text.substring(offset,end),"offset",offset,"nextOffset",end,"hasMore",end<text.length(),"totalChars",text.length()));
     }
 
+    @FunctionalInterface
+    public interface TraceHook {
+        void onTool(int step, String name, String status, String input, String output);
+    }
+
     public static ToolCallback[] tracked(MemoryStore store,long user,String session,String run,Object... toolObjects) {
+        return observe(store, user, session, run, null, toolObjects);
+    }
+
+    public static ToolCallback[] observe(MemoryStore store,long user,String session,String run,TraceHook hook,Object... toolObjects) {
         AtomicInteger step=new AtomicInteger();
         return Arrays.stream(ToolCallbacks.from(toolObjects)).map(delegate->new ToolCallback() {
             @Override public ToolDefinition getToolDefinition() { return delegate.getToolDefinition(); }
             @Override public ToolMetadata getToolMetadata() { return delegate.getToolMetadata(); }
             @Override public String call(String input) { return call(input,new ToolContext(java.util.Map.of())); }
             @Override public String call(String input,ToolContext context) {
-                String id=store.startWork(user,session,run,step.incrementAndGet(),getToolDefinition().name(),MemoryPolicy.redact(input));
+                int stepNo=step.incrementAndGet();
+                String name=getToolDefinition().name();
+                String redacted=MemoryPolicy.redact(input);
+                String id=store.startWork(user,session,run,stepNo,name,redacted);
+                report(hook, stepNo, name, "running", redacted, null);
                 try {
                     String output=delegate.call(input,context);
                     // readWorkMemory is itself recorded without recursively duplicating the entire work log.
-                    String stored=getToolDefinition().name().startsWith("readWorkMemory")?"已读取工作记录":MemoryPolicy.redact(output);
+                    String stored=name.startsWith("readWorkMemory")?"已读取工作记录":MemoryPolicy.redact(output);
                     store.finishWork(user,id,stored,"completed");
+                    report(hook, stepNo, name, "completed", redacted, stored);
                     return output;
                 } catch(RuntimeException e) {
-                    store.finishWork(user,id,"工具执行失败："+e.getClass().getSimpleName(),"failed");
+                    String failure="工具执行失败："+e.getClass().getSimpleName();
+                    store.finishWork(user,id,failure,"failed");
+                    report(hook, stepNo, name, "failed", redacted, failure);
                     throw e;
                 }
             }
         }).toArray(ToolCallback[]::new);
+    }
+
+    private static void report(TraceHook hook,int step,String name,String status,String input,String output) {
+        if (hook == null) return;
+        try { hook.onTool(step, name, status, input, output); }
+        catch (RuntimeException ignored) { }
     }
 }

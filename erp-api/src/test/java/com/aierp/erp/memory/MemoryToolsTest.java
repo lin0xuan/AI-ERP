@@ -35,4 +35,11 @@ class MemoryToolsTest {
         verify(store,times(2)).startWork(eq(42L),eq("session"),eq("run"),anyInt(),anyString(),eq("{}"));
         verify(store).finishWork(eq(42L),eq("work"),contains("工具执行失败"),eq("failed"));
     }
+    @Test void observeReportsStartAndFinishWithoutChangingTheToolResult() {
+        MemoryStore store=mock(MemoryStore.class);when(store.startWork(anyLong(),anyString(),anyString(),anyInt(),anyString(),anyString())).thenReturn("work");
+        var seen=new java.util.ArrayList<String>();
+        var callbacks=MemoryTools.observe(store,42,"session","run",(step,name,status,input,output)->seen.add(status+":"+name),new Fixture());
+        for(var callback:callbacks) if(callback.getToolDefinition().name().equals("lookup")) assertEquals("库存12件，单价99.90元",com.alibaba.fastjson2.JSON.parseObject(callback.call("{}"),String.class));
+        assertEquals(java.util.List.of("running:lookup","completed:lookup"),seen);
+    }
 }

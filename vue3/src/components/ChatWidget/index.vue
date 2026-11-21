@@ -13,6 +13,7 @@
           </el-select>
           <el-button text size="small" :disabled="loading" @click="newConversation">新建对话</el-button>
           <el-button text size="small" @click="showMemory">记忆</el-button>
+          <el-button text size="small" :disabled="!sessionId" @click="showTraces">执行过程</el-button>
           <el-button text size="small" :disabled="loading || !sessionId" @click="removeConversation">删除对话</el-button>
           <el-button text size="small" aria-label="关闭AI助手" @click="close">
             <el-icon><Close /></el-icon>
@@ -21,13 +22,21 @@
 
         <div class="chat-messages" ref="messagesRef">
           <div v-for="(msg, i) in messages" :key="i" :class="['message', msg.role]">
-            <div class="message-bubble" v-html="renderMarkdown(filterContent(msg.content))"></div>
+            <div class="message-stack">
+              <div class="message-bubble" v-html="renderMarkdown(filterContent(msg.content))"></div>
+              <button v-if="msg.traceId" type="button" class="trace-link" @click="openTrace(msg.traceId)">查看执行过程</button>
+            </div>
           </div>
           <div v-if="streamingText !== null" class="message assistant">
-            <div class="message-bubble streaming">
-              <template v-if="streamingText"><span v-html="renderMarkdown(filterContent(streamingText))"></span></template>
-              <template v-else><span class="thinking-text">思考中</span></template>
-              <span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+            <div class="message-stack">
+              <div class="message-bubble streaming">
+                <template v-if="streamingText"><span v-html="renderMarkdown(filterContent(streamingText))"></span></template>
+                <template v-else><span class="thinking-text">思考中</span></template>
+                <span class="loading-dots"><span>.</span><span>.</span><span>.</span></span>
+              </div>
+              <ol v-if="liveSteps.length" class="trace-live">
+                <li v-for="step in liveSteps" :key="`${step.step}-${step.status}`">{{ step.step }}. {{ step.name }} · {{ stepLabel(step.status) }}<span v-if="step.preview"> — {{ step.preview }}</span></li>
+              </ol>
             </div>
           </div>
         </div>
@@ -75,6 +84,42 @@
         </el-tab-pane>
       </el-tabs>
     </el-drawer>
+    <el-drawer v-model="traceVisible" title="执行过程" size="min(560px, 100vw)" append-to-body>
+      <div v-if="traceDetail" class="trace-detail">
+        <el-button text @click="traceDetail = null">返回列表</el-button>
+        <p><strong>{{ statusLabel(traceDetail.status) }}</strong> · {{ traceDetail.model || '未记录模型' }} · {{ duration(traceDetail) }}</p>
+        <p>指令：{{ traceDetail.input_text }}</p>
+        <p>编号：{{ traceDetail.id }} <el-button text @click="copyTrace(traceDetail.id)">复制</el-button></p>
+        <p v-if="traceDetail.error_message" class="trace-error">{{ traceDetail.error_message }}</p>
+        <h4>过程</h4>
+        <el-timeline>
+          <el-timeline-item v-for="event in traceDetail.events || []" :key="event.id" :timestamp="eventTime(event)">
+            <strong>{{ eventLabel(event) }} · {{ statusLabel(event.status) }}</strong>
+            <pre v-if="event.input_text">{{ event.input_text }}</pre>
+            <pre v-if="event.output_text">{{ event.output_text }}</pre>
+          </el-timeline-item>
+        </el-timeline>
+        <h4>工具调用</h4>
+        <el-empty v-if="!(traceDetail.toolCalls || []).length" description="这次没有调用工具" />
+        <article v-for="call in traceDetail.toolCalls || []" :key="call.id" class="memory-card">
+          <strong>步骤 {{ call.step_no }} · {{ call.tool_name }} · {{ statusLabel(call.status) }}</strong>
+          <pre>{{ call.arguments }}
+{{ call.result }}</pre>
+        </article>
+        <h4>关联业务</h4>
+        <el-empty v-if="!(traceDetail.links || []).length" description="没有识别到采购单、库存或业务单据" />
+        <p v-for="link in traceDetail.links || []" :key="link.kind + link.business_id">{{ link.label }} <el-button text @click="copyTrace(link.business_id)">复制编号</el-button></p>
+        <p class="memory-notice">创建、审批、入库和出库不会从这里自动重做。模型 token 用量尚未记录。</p>
+      </div>
+      <div v-else>
+        <el-empty v-if="!traceList.length" description="当前对话还没有执行记录" />
+        <button v-for="item in traceList" :key="item.id" type="button" class="trace-row" @click="openTrace(item.id)">
+          <strong>{{ statusLabel(item.status) }}</strong>
+          <span>{{ item.input_preview || item.id }}</span>
+          <small>{{ duration(item) }}</small>
+        </button>
+      </div>
+    </el-drawer>
     <el-dialog v-model="revisionsVisible" title="记忆更新记录" width="min(520px, 95vw)" append-to-body>
       <el-empty v-if="!revisions.length" description="没有旧版本" />
       <article v-for="item in revisions" :key="item.version" class="memory-card">
@@ -91,13 +136,16 @@ import { getToken } from '@/utils/auth'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { getChatHistory, getChatSessions, endChatSession, deleteChatSession, getMemories, forgetMemory, getMemoryRevisions, getWorkMemory } from '@/api/ai/chat'
+import { getAiTraces, getAiTrace } from '@/api/ai/trace'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 interface Msg {
   sessionId: string
   role: 'user' | 'assistant'
   content: string
+  traceId?: string
 }
+interface TraceStep { step: number; name: string; status: string; preview?: string }
 
 const visible = ref(false)
 const input = ref('')
@@ -117,7 +165,54 @@ const memoryItems = ref<any[]>([])
 const workItems = ref<any[]>([])
 const revisions = ref<any[]>([])
 const revisionsVisible = ref(false)
+const traceVisible = ref(false)
+const traceList = ref<any[]>([])
+const traceDetail = ref<any>(null)
+const liveSteps = ref<TraceStep[]>([])
+const currentTraceId = ref('')
 let restoreRequest = 0
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = { RUNNING: '进行中', COMPLETED: '完成', FAILED: '失败', running: '进行中', completed: '完成', failed: '失败' }
+  return labels[status] || status || '未知'
+}
+function stepLabel(status: string) { return statusLabel(status) }
+function eventLabel(event: any) {
+  if (event.type === 'MODEL') return `模型 ${event.name || ''}`.trim()
+  if (event.type === 'TOOL') return `工具 ${event.name || ''}`.trim()
+  return `${event.type || '步骤'} ${event.name || ''}`.trim()
+}
+function eventTime(event: any) {
+  if (!event.started_at) return ''
+  const elapsed = event.finished_at ? ` · ${Math.max(0, event.finished_at - event.started_at)} 毫秒` : ''
+  return new Date(event.started_at).toLocaleString('zh-CN', { hour12: false }) + elapsed
+}
+function duration(row: any) {
+  if (!row?.started_at) return ''
+  if (!row.finished_at) return '进行中'
+  const ms = Math.max(0, row.finished_at - row.started_at)
+  return ms < 1000 ? `${ms} 毫秒` : `${(ms / 1000).toFixed(1)} 秒`
+}
+async function copyTrace(id: string) {
+  try { await navigator.clipboard.writeText(id); ElMessage.success('已复制') }
+  catch { ElMessage.error('复制失败') }
+}
+async function showTraces() {
+  traceVisible.value = true
+  traceDetail.value = null
+  if (!sessionId.value) { traceList.value = []; return }
+  try {
+    const result: any = await getAiTraces(sessionId.value)
+    traceList.value = result.data || []
+  } catch { ElMessage.error('执行过程加载失败') }
+}
+async function openTrace(id: string) {
+  traceVisible.value = true
+  try {
+    const result: any = await getAiTrace(id)
+    traceDetail.value = result.data
+  } catch { ElMessage.error('这条执行记录加载失败') }
+}
 
 async function showMemory() {
   memoryVisible.value = true
@@ -205,6 +300,8 @@ async function send() {
   ++restoreRequest
   memoryNotice.value = ''
   streamingText.value = ''
+  liveSteps.value = []
+  currentTraceId.value = ''
 
   if (!sessionId.value) {
     sessionId.value = crypto.randomUUID()
@@ -269,12 +366,20 @@ async function send() {
             fullContent += content
             streamingText.value = fullContent
             scrollToBottom()
+          } else if (type === 'trace') {
+            currentTraceId.value = content
+          } else if (type === 'step') {
+            const step = JSON.parse(content) as TraceStep
+            const index = liveSteps.value.findIndex(item => item.step === step.step && item.name === step.name)
+            if (index >= 0) liveSteps.value[index] = step
+            else liveSteps.value.push(step)
+            scrollToBottom()
           } else if (type === 'session') {
             if (content) sessionId.value = content
           } else if (type === 'memory') {
             memoryNotice.value = content
           } else if (type === 'error') {
-            messages.value.push({ sessionId: sessionId.value, role: 'assistant', content })
+            messages.value.push({ sessionId: sessionId.value, role: 'assistant', content, traceId: currentTraceId.value || undefined })
             streamingText.value = null
           }
         } catch {
@@ -285,7 +390,7 @@ async function send() {
 
     streamingText.value = null
     if (fullContent) {
-      messages.value.push({ sessionId: sessionId.value, role: 'assistant', content: fullContent })
+      messages.value.push({ sessionId: sessionId.value, role: 'assistant', content: fullContent, traceId: currentTraceId.value || undefined })
     }
   } catch (e: any) {
     if (e.name === 'AbortError') return
@@ -337,6 +442,13 @@ function scrollToBottom() {
 
 <style scoped>
 .memory-notice { padding: 8px 12px; color: #667085; font-size: 12px; }
+.message-stack { max-width: 80%; display: flex; flex-direction: column; gap: 4px; }
+.message-stack .message-bubble { max-width: 100%; }
+.trace-link, .trace-row { border: 0; background: transparent; color: #409eff; text-align: left; cursor: pointer; font-size: 12px; padding: 0; }
+.trace-row { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 10px 0; border-bottom: 1px solid #e4e7ed; color: #263446; }
+.trace-live { margin: 0; padding-left: 18px; color: #667085; font-size: 12px; }
+.trace-detail pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f8fa; padding: 8px; border-radius: 6px; }
+.trace-error { color: #c45656; }
 .memory-card { padding: 12px 0; border-bottom: 1px solid #e4e7ed; overflow-wrap: anywhere; }
 .memory-card p, .memory-card pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-header { flex-wrap: wrap; gap: 4px; }

@@ -33,5 +33,7 @@ class MemoryPolicyTest {
         assertTrue(MemoryPolicy.explicit("请记住：我喜欢中文回答"));
         assertFalse(MemoryPolicy.explicit("不要记住我的偏好"));
         assertFalse(MemoryPolicy.redact("{\"api_key\":\"secret123\"}").contains("secret123"));
+        assertFalse(MemoryPolicy.redact("收货人13800138000").contains("13800138000"));
+        assertTrue(MemoryPolicy.redact("库存10086件").contains("10086"));
     }
 }
